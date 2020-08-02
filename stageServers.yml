@@ -229,7 +229,43 @@ Resources:
         Value:
           Ref: EnvironmentSuffix
 
+  WebInstanceAZ2:
+    Type: AWS::EC2::Instance
+    DependsOn: WebRoleInstanceProfile
+    Properties:
+      InstanceType:
+        Ref: WebInstanceType
+      IamInstanceProfile:
+        Ref: WebRoleInstanceProfile
+      KeyName:
+        Ref: KeyName
+      EbsOptimized:
+        Ref: EbsOpt
+      ImageId: !FindInMap [ AWSRegionArch2AMI, !Ref 'AWS::Region', !FindInMap [ AWSInstanceType2Arch, !Ref  WebInstanceType, Arch ] ]
+      DisableApiTermination: 'false'
+      BlockDeviceMappings:
+      - DeviceName: "/dev/sda1"
+        Ebs:
+          VolumeType: gp2
+          DeleteOnTermination: 'true'
+          VolumeSize: '50'
+      NetworkInterfaces:
+      - DeleteOnTermination: true
+        Description: Main interface
+        DeviceIndex: '0'
+        GroupSet:
+        - Fn::ImportValue:
+            !Sub "${NetworkStackName}-Web-SG"
+        SubnetId:
+          Fn::ImportValue:
+              !Sub "${NetworkStackName}-Web-Subnet-AZ2"
+      Tags:
+      - Key: Name
+        Value:  !Join [ '', [!Ref  ClientPrefix, 'AWSWEB02-', !Ref  EnvironmentSuffix ] ]
 
+      - Key: Environment
+        Value:
+          Ref: EnvironmentSuffix
 
   WebFileSystem:
     Type: AWS::EFS::FileSystem

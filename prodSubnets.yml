@@ -25,7 +25,6 @@ Parameters:
       - STAGE
       - DEV
 
-
   VPNDestCIDR:
     Description: 'VPN Destination CIDR Range '
     Type: String
@@ -50,7 +49,6 @@ Parameters:
     Description: " App Subnet CIDR Range"
     Type: String
     Default: 10.202.55.0/24
-
 
 
 Resources:

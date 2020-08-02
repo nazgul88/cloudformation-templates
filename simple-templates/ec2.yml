@@ -16,7 +16,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: ami-09d8b5222f2b93bf0
-      InstanceType: t2.micro
+      InstanceType: t2.micro #change to appropriate ec3 instance size
   S3:
     Type: "AWS::S3::Bucket"
     Properties:
