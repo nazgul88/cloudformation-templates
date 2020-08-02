@@ -1,0 +1,696 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Prod Environment Subnets
+
+Parameters:
+  ClientPrefix:
+     Description: " Client AWS Prefix"
+     Type: String
+     Default: ECCO
+
+  VPCStackName:
+    Description: "CloudFormation VPC Stack Name"
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: "^[a-zA-Z][-a-zA-Z0-9]*$"
+    Default: "VPC"
+
+  EnvironmentSuffix:
+    Description: " Environment Suffix (PROD, STAGE, DEV)"
+    Type: String
+    Default: PROD
+    AllowedValues:
+      - PROD
+      - STAGE
+      - DEV
+
+
+  VPNDestCIDR:
+    Description: 'VPN Destination CIDR Range '
+    Type: String
+    Default: 10.250.0.0/16
+
+  WebSubnetCIDRAZ1:
+    Description: " Web Subnet CIDR Range "
+    Type: String
+    Default: 10.202.40.0/24
+
+  WebSubnetCIDRAZ2:
+    Description: " Web Subnet CIDR Range "
+    Type: String
+    Default: 10.202.50.0/24
+
+  AppSubnetCIDRAZ1:
+    Description: " App Subnet CIDR Range"
+    Type: String
+    Default: 10.202.45.0/24
+
+  AppSubnetCIDRAZ2:
+    Description: " App Subnet CIDR Range"
+    Type: String
+    Default: 10.202.55.0/24
+
+
+
+Resources:
+  WebSubnetAZ1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+         !Sub "${VPCStackName}-VPCID"
+      CidrBlock: !Ref  WebSubnetCIDRAZ1
+      AvailabilityZone:
+          !Select ['0', !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'Web Subnet AZ1'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  WebSubnetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+         !Sub "${VPCStackName}-VPCID"
+      CidrBlock:
+        !Ref  WebSubnetCIDRAZ2
+      AvailabilityZone:
+        !Select ['1', !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ',[ !Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'Web Subnet AZ2'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  AppSubnetAZ1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${VPCStackName}-VPCID"
+      CidrBlock:
+        !Ref  AppSubnetCIDRAZ1
+      AvailabilityZone:  !Select ['0', !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'App Subnet AZ1'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  AppSubnetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${VPCStackName}-VPCID"
+      CidrBlock:
+        !Ref  AppSubnetCIDRAZ2
+      AvailabilityZone: !Select ['1', !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ',[ !Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'App Subnet AZ2'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Internal App Security Group
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${VPCStackName}-VPCID"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '8080'
+        ToPort: '8080'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ1
+      - IpProtocol: tcp
+        FromPort: '49152'
+        ToPort: '49155'
+        CidrIp: 10.202.0.0/16
+      - IpProtocol: tcp
+        FromPort: '38465'
+        ToPort: '38469'
+        CidrIp: 10.202.0.0/16
+      - IpProtocol: tcp
+        FromPort: '24007'
+        ToPort: '24007'
+        CidrIp: 10.202.0.0/16
+      - IpProtocol: tcp
+        FromPort: '8080'
+        ToPort: '8080'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ2
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp:
+          !Ref  VPNDestCIDR
+      - IpProtocol: tcp
+        FromPort: '8005'
+        ToPort: '8005'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ1
+      - IpProtocol: tcp
+        FromPort: '8005'
+        ToPort: '8005'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ2
+      - IpProtocol: tcp
+        FromPort: '5432'
+        ToPort: '5432'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ1
+      - IpProtocol: tcp
+        FromPort: '5432'
+        ToPort: '5432'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ2
+      - IpProtocol: tcp
+        FromPort: '3306'
+        ToPort: '3306'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ1
+      - IpProtocol: tcp
+        FromPort: '3306'
+        ToPort: '3306'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ2
+      - IpProtocol: "-1"
+        CidrIp:
+          !Ref  AppSubnetCIDRAZ1
+      - IpProtocol: "-1"
+        CidrIp:
+          !Ref  AppSubnetCIDRAZ2
+      - IpProtocol: "-1"
+        CidrIp:
+          Fn::ImportValue:
+             !Sub "${VPCStackName}-Admin-AZ1-CIDR"
+      - IpProtocol: "-1"
+        CidrIp:
+          Fn::ImportValue:
+             !Sub "${VPCStackName}-Admin-AZ2-CIDR"
+      - IpProtocol: icmp
+        FromPort: "-1"
+        ToPort: "-1"
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ',[ !Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'App SG'] ]
+        Value:
+          !Ref  EnvironmentSuffix
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Internal DB Security Group
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${VPCStackName}-VPCID"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '3306'
+        ToPort: '3306'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ1
+      - IpProtocol: tcp
+        FromPort: '3306'
+        ToPort: '3306'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ2
+      - IpProtocol: tcp
+        FromPort: '1433'
+        ToPort: '1433'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ1
+      - IpProtocol: tcp
+        FromPort: '1433'
+        ToPort: '1433'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ2
+      - IpProtocol: tcp
+        FromPort: '5432'
+        ToPort: '5432'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ1
+      - IpProtocol: tcp
+        FromPort: '5432'
+        ToPort: '5432'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ2
+      - IpProtocol: "-1"
+        CidrIp:
+          !Ref  AppSubnetCIDRAZ1
+      - IpProtocol: "-1"
+        CidrIp:
+          !Ref  AppSubnetCIDRAZ2
+      - IpProtocol: "-1"
+        CidrIp:
+         Fn::ImportValue:
+             !Sub "${VPCStackName}-Admin-AZ1-CIDR"
+      - IpProtocol: "-1"
+        CidrIp:
+         Fn::ImportValue:
+             !Sub "${VPCStackName}-Admin-AZ2-CIDR"
+      - IpProtocol: icmp
+        FromPort: "-1"
+        ToPort: "-1"
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ',[ !Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'DB SG'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: External Web Security Group
+      VpcId:
+        Fn::ImportValue:
+         !Sub "${VPCStackName}-VPCID"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp:
+          !Ref  VPNDestCIDR
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: "-1"
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ1
+      - IpProtocol: "-1"
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ2
+      - IpProtocol: "-1"
+        CidrIp:
+          Fn::ImportValue:
+             !Sub "${VPCStackName}-Admin-AZ1-CIDR"
+      - IpProtocol: "-1"
+        CidrIp:
+         Fn::ImportValue:
+             !Sub "${VPCStackName}-Admin-AZ2-CIDR"
+      - IpProtocol: icmp
+        FromPort: "-1"
+        ToPort: "-1"
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ',[ !Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'Web SG'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+         !Sub "${VPCStackName}-VPCID"
+      GroupDescription: Security group for mount target
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '2049'
+        ToPort: '2049'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ1
+      - IpProtocol: tcp
+        FromPort: '2049'
+        ToPort: '2049'
+        CidrIp:
+          !Ref  WebSubnetCIDRAZ2
+      - IpProtocol: tcp
+        FromPort: '2049'
+        ToPort: '2049'
+        CidrIp:
+            Fn::ImportValue:
+               !Sub "${VPCStackName}-Admin-AZ1-CIDR"
+      - IpProtocol: tcp
+        FromPort: '2049'
+        ToPort: '2049'
+        CidrIp:
+            Fn::ImportValue:
+               !Sub "${VPCStackName}-Admin-AZ2-CIDR"
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'EFS SG'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  rtWebAZ1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${VPCStackName}-VPCID"
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'Internet Route AZ1'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  rtWebassocAZ1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        !Ref  rtWebAZ1
+      SubnetId:
+        !Ref  WebSubnetAZ1
+
+  rtWebInternetAZ1:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId:
+        !Ref  rtWebAZ1
+      NatGatewayId:
+        Fn::ImportValue:
+           !Sub "${VPCStackName}-NAT-AZ1"
+
+  rtWebVPNAZ1:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock:
+        !Ref  VPNDestCIDR
+      RouteTableId:
+        !Ref  rtWebAZ1
+      GatewayId:
+        Fn::ImportValue:
+           !Sub "${VPCStackName}-VPNGateway"
+
+  rtWebAZ2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+         !Sub "${VPCStackName}-VPCID"
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'Web AZ2 Route'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  rtWebassocAZ2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        !Ref  rtWebAZ2
+      SubnetId:
+        !Ref  WebSubnetAZ2
+
+  rtWebInternetAZ2:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId:
+        !Ref  rtWebAZ2
+      NatGatewayId:
+        Fn::ImportValue:
+           !Sub "${VPCStackName}-NAT-AZ2"
+
+  rtWebVPNAZ2:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock:
+        !Ref  VPNDestCIDR
+      RouteTableId:
+        !Ref  rtWebAZ2
+      GatewayId:
+        Fn::ImportValue:
+           !Sub "${VPCStackName}-VPNGateway"
+
+  rtAppAZ1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+         !Sub "${VPCStackName}-VPCID"
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'App Internet Route AZ1'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  rtAppAssocAZ1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        !Ref  rtAppAZ1
+      SubnetId:
+        !Ref  AppSubnetAZ1
+
+  rtAppInternetAZ1:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId:
+        !Ref  rtAppAZ1
+      NatGatewayId:
+        Fn::ImportValue:
+           !Sub "${VPCStackName}-NAT-AZ1"
+
+  rtAppVPNAZ1:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock:
+        !Ref  VPNDestCIDR
+      RouteTableId:
+        !Ref  rtAppAZ1
+      GatewayId:
+        Fn::ImportValue:
+           !Sub "${VPCStackName}-VPNGateway"
+
+  rtAppAZ2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+         !Sub "${VPCStackName}-VPCID"
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'App Internet Route AZ2' ]]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  rtAppAssocAZ2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        !Ref  rtAppAZ2
+      SubnetId:
+        !Ref  AppSubnetAZ2
+
+  rtAppInternetAZ2:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId:
+        !Ref  rtAppAZ2
+      NatGatewayId:
+        Fn::ImportValue:
+           !Sub "${VPCStackName}-NAT-AZ2"
+
+  rtAppVPNAZ2:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock:
+        !Ref  VPNDestCIDR
+      RouteTableId:
+        !Ref  rtAppAZ2
+      GatewayId:
+        Fn::ImportValue:
+           !Sub "${VPCStackName}-VPNGateway"
+
+  WebAcl:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${VPCStackName}-VPCID"
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'Web ACL'] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  WebAclAssocAZ1:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      NetworkAclId:
+        !Ref  WebAcl
+      SubnetId:
+        !Ref  WebSubnetAZ1
+
+  WebAclAssocAZ2:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      NetworkAclId:
+        !Ref  WebAcl
+      SubnetId:
+        !Ref  WebSubnetAZ2
+
+  WebAclAllowTCPEgress:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: true
+      Protocol: "-1"
+      RuleAction: allow
+      RuleNumber: '200'
+      NetworkAclId:
+        !Ref  WebAcl
+
+  WebAclAllowAllIngress:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Protocol: "-1"
+      RuleAction: allow
+      RuleNumber: '200'
+      NetworkAclId:
+        !Ref  WebAcl
+
+  AppAcl:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${VPCStackName}-VPCID"
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, !Ref  EnvironmentSuffix,  'App ACL '] ]
+      - Key: Environment
+        Value:
+          !Ref  EnvironmentSuffix
+
+  AppAclAssocAZ1:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      NetworkAclId:
+        !Ref  AppAcl
+      SubnetId:
+        !Ref  AppSubnetAZ1
+
+  AppAclAssocAZ2:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      NetworkAclId:
+        !Ref  AppAcl
+      SubnetId:
+        !Ref  AppSubnetAZ2
+
+  AppAclAllowTCPEgress:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: true
+      Protocol: "-1"
+      RuleAction: allow
+      RuleNumber: '200'
+      NetworkAclId:
+        !Ref  AppAcl
+
+  AppAclAllowAllIngress:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Protocol: "-1"
+      RuleAction: allow
+      RuleNumber: '200'
+      NetworkAclId:
+        !Ref  AppAcl
+
+
+Outputs:
+  Environment:
+    Description: Environment
+    Value:
+      !Ref  EnvironmentSuffix
+
+
+  WebSubnetAZ2:
+    Description: WebSubnetAZ2
+    Value:
+      !Ref  WebSubnetAZ2
+    Export:
+      Name: !Sub "${AWS::StackName}-Web-Subnet-AZ2"
+
+  WebSubnetAZ1:
+    Description: WebSubnetAZ1
+    Value:
+      !Ref  WebSubnetAZ1
+    Export:
+      Name: !Sub "${AWS::StackName}-Web-Subnet-AZ1"
+
+  WebSecurityGroup:
+    Description: Web Security Group
+    Value:
+      !Ref  WebSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-Web-SG"
+
+  AppSubnetAZ2:
+    Description: AppSubnetAZ2
+    Value:
+      !Ref  AppSubnetAZ2
+    Export:
+      Name: !Sub "${AWS::StackName}-App-Subnet-AZ2"
+
+  AppSubnetAZ1:
+    Description: AppSubnetAZ1
+    Value:
+      !Ref  AppSubnetAZ1
+    Export:
+      Name: !Sub "${AWS::StackName}-App-Subnet-AZ1"
+
+  AppSecurityGroup:
+    Description: App Security Group
+    Value:
+      !Ref  AppSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-App-SG"
+
+  EFSSecurityGroup:
+    Description: EFS Security Group
+    Value:
+      !Ref  EFSSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-EFS-SG"
+
+  DBSecurityGroup:
+    Description: DB Security Group
+    Value:
+      !Ref  DBSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-DB-SG"

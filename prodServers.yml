@@ -1,0 +1,555 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Prod Environment Instances
+
+Parameters:
+  ClientPrefix:
+    Description: " Client AWS Prefix"
+    Type: String
+    Default: ECCO
+
+  ELBLogBucketName:
+    Description: " ELB Logging Bucket Name"
+    Type: String
+    Default: ecco-elb-logs-prod
+
+  MySQLBucketName:
+    Description: " ELB Logging Bucket Name"
+    Type: String
+    Default: ecco-mysql-backups-prod
+
+  EnvironmentSuffix:
+    Description: " Environment Suffix (PROD, STAGE, DEV)"
+    Type: String
+    Default: PROD
+    AllowedValues:
+    - PROD
+    - STAGE
+    - DEV
+
+  VPCStackName:
+    Description: "CloudFormation VPC Stack Name"
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: "^[a-zA-Z][-a-zA-Z0-9]*$"
+    Default: "VPC"
+
+  NetworkStackName:
+    Description: "CloudFormation Network Envrionment  Stack Name"
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: "^[a-zA-Z][-a-zA-Z0-9]*$"
+    Default: "prodSubnets"
+
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: cloudgate
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  EbsOpt:
+    Description: " EBS Optimized? (true,false)"
+    Type: String
+    Default: false
+    AllowedValues:
+    - true
+    - false
+
+  WebInstanceType:
+    Description: Web EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+    - m4.large
+    - t2.large
+    - t2.micro
+
+  SolrInstanceType:
+    Description: Solr EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+    - m4.large
+    - t2.medium
+    - t2.micro
+
+  DBInstanceType:
+    Description: MySQL RDS instance type
+    Type: String
+    Default: db.t2.medium
+    AllowedValues:
+    - db.r4.large
+    - db.t2.medium
+
+
+Mappings:
+  AWSInstanceType2Arch:
+    t2.micro:
+      'Arch': '64'
+    m4.large:
+      'Arch': '64'
+    t2.large:
+      'Arch': '64'
+    m4.xlarge:
+      'Arch': '64'
+    m4.2xlarge:
+      'Arch': '64'
+    r3.large:
+      'Arch': '64'
+    r3.xlarge:
+      'Arch': '64'
+    c4.large:
+      'Arch': '64'
+    c4.2xlarge:
+      'Arch': '64'
+    c4.xlarge:
+      'Arch': '64'
+
+  AWSRegionArch2AMI:
+    us-west-2:
+      '64': 'ami-b7a114d7'
+    us-west-1:
+      '64': 'ami-d8bdebb8'
+    us-east-1:
+      '64': 'ami-e13739f6'
+    us-east-2:
+      '64': 'ami-618fab04'
+    ca-central-1:
+      '64': 'ami-3d299b59'
+
+
+Resources:
+  WebRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: "CloudWatchPublish"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: "arn:aws:logs:*:*:*"
+
+
+  WebRoleInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - Ref: WebRole
+
+  AppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: "CloudWatchPublish"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: "arn:aws:logs:*:*:*"
+
+
+  AppRoleInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - Ref: AppRole
+
+  WebInstanceAZ1:
+    Type: AWS::EC2::Instance
+    DependsOn: WebRoleInstanceProfile
+    Properties:
+      InstanceType:
+        Ref: WebInstanceType
+      IamInstanceProfile:
+        Ref: WebRoleInstanceProfile
+      KeyName:
+        Ref: KeyName
+      EbsOptimized:
+        Ref: EbsOpt
+      ImageId: !FindInMap [ AWSRegionArch2AMI, !Ref 'AWS::Region', !FindInMap [ AWSInstanceType2Arch, !Ref  WebInstanceType, Arch ] ]
+      DisableApiTermination: 'true'
+      BlockDeviceMappings:
+      - DeviceName: "/dev/sda1"
+        Ebs:
+          VolumeType: gp2
+          DeleteOnTermination: 'true'
+          VolumeSize: '100'
+      NetworkInterfaces:
+      - DeleteOnTermination: true
+        Description: Main interface
+        DeviceIndex: '0'
+        GroupSet:
+        - Fn::ImportValue:
+            !Sub "${NetworkStackName}-Web-SG"
+        SubnetId:
+          Fn::ImportValue:
+              !Sub "${NetworkStackName}-Web-Subnet-AZ1"
+      Tags:
+      - Key: Name
+        Value:  !Join [ '', [!Ref  ClientPrefix, 'AWSWEB01-', !Ref  EnvironmentSuffix ] ]
+
+      - Key: Environment
+        Value:
+          Ref: EnvironmentSuffix
+
+
+
+  WebFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      FileSystemTags:
+      - Key: Name
+        Value: !Join [ '', [!Ref  ClientPrefix, 'AWSEFS01-', !Ref  EnvironmentSuffix ] ]
+      - Key: Environment
+        Value:
+          Ref: EnvironmentSuffix
+
+  WebMountTargetAZ1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId:
+        Ref: WebFileSystem
+      SubnetId:
+       Fn::ImportValue:
+          !Sub "${NetworkStackName}-Web-Subnet-AZ1"
+      SecurityGroups:
+      - Fn::ImportValue:
+          !Sub "${NetworkStackName}-EFS-SG"
+
+  WebMountTargetAZ2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId:
+        Ref: WebFileSystem
+      SubnetId:
+        Fn::ImportValue:
+            !Sub "${NetworkStackName}-Web-Subnet-AZ2"
+      SecurityGroups:
+      - Fn::ImportValue:
+          !Sub "${NetworkStackName}-EFS-SG"
+
+  SolrInstanceAZ1:
+    Type: AWS::EC2::Instance
+    DependsOn: AppRoleInstanceProfile
+    Properties:
+      InstanceType:
+        Ref: SolrInstanceType
+      IamInstanceProfile:
+        Ref: AppRoleInstanceProfile
+      KeyName:
+        Ref: KeyName
+      EbsOptimized:
+        Ref: EbsOpt
+      ImageId: !FindInMap [ AWSRegionArch2AMI, !Ref 'AWS::Region', !FindInMap [ AWSInstanceType2Arch, !Ref  SolrInstanceType, Arch ] ]
+      DisableApiTermination: 'true'
+      BlockDeviceMappings:
+      - DeviceName: "/dev/sda1"
+        Ebs:
+          VolumeType: gp2
+          DeleteOnTermination: 'true'
+          VolumeSize: '50'
+      NetworkInterfaces:
+      - DeleteOnTermination: true
+        Description: Main interface
+        DeviceIndex: '0'
+        GroupSet:
+        - Fn::ImportValue:
+            !Sub "${NetworkStackName}-App-SG"
+        SubnetId:
+          Fn::ImportValue:
+              !Sub "${NetworkStackName}-App-Subnet-AZ1"
+      Tags:
+      - Key: Name
+        Value:  !Join [ '', [!Ref  ClientPrefix, 'AWSSOLR01-', !Ref  EnvironmentSuffix ] ]
+
+      - Key: Environment
+        Value:
+          Ref: EnvironmentSuffix
+
+
+  DBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: String
+      SubnetIds:
+        -  Fn::ImportValue:
+              !Sub "${NetworkStackName}-App-Subnet-AZ1"
+        -  Fn::ImportValue:
+              !Sub "${NetworkStackName}-App-Subnet-AZ2"
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [Ref:  ClientPrefix, 'AWSMySQLSubnet-', Ref:  EnvironmentSuffix ] ]
+        - Key: Environment
+          Value:
+            Ref: EnvironmentSuffix
+
+  RDSDBClusterParameterGroup:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description:  Stage Aurora Cluster Parameter Group
+      Family: aurora5.6
+      Parameters:
+        character_set_database: "utf8"
+
+  RDSDBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description:  Stage Aurora Parameter Group
+      Family: aurora5.6
+
+  RDSCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      MasterUsername: 'tgadmin'
+      MasterUserPassword: 'YoMoSLowNOGo11!'
+      Engine: aurora
+      DBSubnetGroupName:
+        Ref: DBSubnetGroup
+      DBClusterParameterGroupName:
+        Ref: RDSDBClusterParameterGroup
+      VpcSecurityGroupIds:
+         -  Fn::ImportValue:
+              !Sub "${NetworkStackName}-DB-SG"
+      PreferredBackupWindow: 9:00-10:00
+      PreferredMaintenanceWindow: Sat:12:00-Sat:13:00
+      BackupRetentionPeriod: 14
+      Tags:
+      - Key: Name
+        Value: !Join [ '', [Ref:  ClientPrefix, 'AWSMySQL01-', Ref:  EnvironmentSuffix ] ]
+      - Key: Environment
+        Value:
+          Ref: EnvironmentSuffix
+
+  RDSDBInstance1:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBSubnetGroupName:
+        Ref: DBSubnetGroup
+      DBParameterGroupName:
+        Ref: RDSDBParameterGroup
+      Engine: aurora
+      DBClusterIdentifier:
+        Ref: RDSCluster
+      PubliclyAccessible: 'false'
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+      DBInstanceClass:
+        Ref: DBInstanceType
+
+  RDSDBInstance2:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBSubnetGroupName:
+        Ref: DBSubnetGroup
+      DBParameterGroupName:
+        Ref: RDSDBParameterGroup
+      Engine: aurora
+      DBClusterIdentifier:
+        Ref: RDSCluster
+      PubliclyAccessible: 'false'
+      AvailabilityZone:
+        Fn::Select:
+            - 1
+            - Fn::GetAZs: ""
+      DBInstanceClass:
+        Ref: DBInstanceType
+
+  MySQLBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        !Ref MySQLBucketName
+      LifecycleConfiguration:
+        Rules:
+        - ExpirationInDays: '90'
+          Status: Enabled
+      Tags:
+      - Key: Environment
+        Value:
+          Ref: EnvironmentSuffix
+
+  S3LoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        !Ref ELBLogBucketName
+      LifecycleConfiguration:
+        Rules:
+        - ExpirationInDays: '365'
+          Status: Enabled
+      Tags:
+      - Key: Environment
+        Value:
+          Ref: EnvironmentSuffix
+
+  S3LoggingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        !Ref S3LoggingBucket
+      PolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+        - Sid: ELBAccessLogs20130930
+          Effect: Allow
+          Resource:  !Join [ '', ['arn:aws:s3:::', !Ref  S3LoggingBucket, '/*' ] ]
+          Principal:
+            AWS:
+             - '797873946194'
+             - '033677994240'
+             - '127311923021'
+             - '027434742980'
+             - '985666609251'
+          Action:
+           - s3:PutObject
+
+  WebELB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: S3LoggingBucketPolicy
+    Properties:
+      Name: !Join [ '', [!Ref  ClientPrefix, 'WebALB-', !Ref  EnvironmentSuffix ] ]
+      Subnets:
+      - Fn::ImportValue:
+         !Sub "${VPCStackName}-ELB-Subnet-AZ1"
+      - Fn::ImportValue:
+         !Sub "${VPCStackName}-ELB-Subnet-AZ2"
+      SecurityGroups:
+      - Fn::ImportValue:
+          !Sub "${NetworkStackName}-Web-SG"
+      LoadBalancerAttributes:
+       - Key: idle_timeout.timeout_seconds
+         Value: '50'
+       - Key: access_logs.s3.enabled
+         Value: true
+       - Key: access_logs.s3.bucket
+         Value: !Ref S3LoggingBucket
+      Tags:
+      - Key: Name
+        Value: !Join [ '', [!Ref  ClientPrefix, 'WebALB-', !Ref  EnvironmentSuffix ] ]
+      - Key: Environment
+        Value:
+          Ref: EnvironmentSuffix
+
+  WebELBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 4
+      Matcher:
+        HttpCode: '200'
+      Name: !Join [ '', [!Ref  ClientPrefix, 'Web-ALB-Targets-', !Ref  EnvironmentSuffix ] ]
+      Targets:
+      - Id:
+          Ref: WebInstanceAZ1
+        Port: 80
+      Port: 80
+      Protocol: HTTP
+      TargetGroupAttributes:
+      - Key: deregistration_delay.timeout_seconds
+        Value: '20'
+      - Key: stickiness.enabled
+        Value: true
+      - Key: stickiness.type
+        Value: lb_cookie
+      - Key: stickiness.lb_cookie.duration_seconds
+        Value: 3600
+      UnhealthyThresholdCount: 3
+      VpcId:
+        Fn::ImportValue:
+         !Sub "${VPCStackName}-VPCID"
+      Tags:
+      - Key: Name
+        Value: !Join [ '', [!Ref  ClientPrefix, 'Web ALB TargetGroup', !Ref  EnvironmentSuffix ] ]
+      - Key: Environment
+        Value:
+          !Ref EnvironmentSuffix
+
+  WebELBListenerHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn:
+          Ref: WebELBTargetGroup
+      LoadBalancerArn:
+        Ref: WebELB
+      Port: '80'
+      Protocol: HTTP
+
+
+Outputs:
+  ECCOExtElb:
+    Description: WebELB
+    Value:
+      Ref: WebELB
+
+  ECCOExtElbDNS:
+    Description: WebELB DNS
+    Value:
+      Fn::GetAtt:
+      - WebELB
+      - DNSName
+
+  RDSCluster:
+    Description: DB
+    Value:
+      Ref: RDSCluster
+
+  WebRole:
+    Description: WebRole
+    Value:
+      Ref: WebRole
+
+  AppRole:
+    Description: AppRole
+    Value:
+      Ref: AppRole
+
+  DBEndpoint:
+    Description: DB RDS Endpoint
+    Value:
+      Fn::GetAtt:
+      - RDSCluster
+      - Endpoint.Address

@@ -1,0 +1,553 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Dev Environment VPC
+
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: XYZ
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  ClientPrefix:
+    Description: " Client AWS Prefix (MTRA) "
+    Type: String
+    Default: XYZ
+
+  XYZVPCCIDR:
+    Description: VPC CIDR range (172.0.0.0/16)
+    Type: String
+    Default: 10.202.0.0/16
+
+  ELBSubnetAZ1CIDR:
+    Description: " ELB Prod Subnet AZ1 CIDR Range "
+    Type: String
+    Default: 10.202.0.128/25
+
+  ELBSubnetAZ2CIDR:
+    Description: " ELB Prod Subnet AZ2 CIDR Range "
+    Type: String
+    Default: 10.202.1.128/25
+
+  AdminSubnetAZ1CIDR:
+    Description: " Admin Subnet AZ1 CIDR Range "
+    Type: String
+    Default: 10.202.0.0/25
+  AdminSubnetAZ2CIDR:
+    Description: " Admin Subnet AZ2 CIDR Range "
+    Type: String
+    Default: 10.202.1.0/25
+
+  EbsOpt:
+    Description: " EBS Optimized? (true,false)"
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+
+  AdminInstanceType:
+    Description: Admin EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - m3.medium
+
+Mappings:
+  AWSInstanceType2Arch:
+    t2.micro:
+      'Arch': '64'
+    m3.medium:
+      'Arch': '64'
+    c4.xlarge:
+      'Arch': '64'
+  AWSRegionArch2AMI:
+    us-west-2:
+      '64': 'ami-a58d0dc5'
+    us-west-1:
+      '64': 'ami-d8bdebb8'
+    us-east-1:
+      '64': 'ami-0ac80df6eff0e70b5'
+    us-east-2:
+      '64': 'ami-618fab04'
+    ca-central-1:
+      '64': 'ami-3d299b59'
+
+Resources:
+  XYZVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref XYZVPCCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value: !Join [ '', [!Ref ClientPrefix,  'Hosting VPC' ]]
+
+  XYZGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Join [ '', [!Ref  ClientPrefix, 'Internet Gateway' ]]
+
+  VPNGateway:
+    Type: "AWS::EC2::VPNGateway"
+    Properties:
+      Type: ipsec.1
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [!Ref  ClientPrefix, 'VPN Gateway' ]]
+
+  XYZGatewayAttatch:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId:
+        !Ref  XYZGateway
+      VpcId:
+        !Ref  XYZVPC
+
+  VPNGatewayAttatch:
+    Type: AWS::EC2::VPCGatewayAttachment
+    DependsOn: VPNGateway
+    Properties:
+      VpnGatewayId:
+        !Ref  VPNGateway
+      VpcId:
+        !Ref  XYZVPC
+
+
+  S3Endpoint:
+    Type: "AWS::EC2::VPCEndpoint"
+    Properties:
+      ServiceName:
+        !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref XYZVPC
+
+
+  ELBSubnetAZ1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        !Ref  XYZVPC
+      CidrBlock:
+        !Ref  ELBSubnetAZ1CIDR
+      AvailabilityZone:
+        !Select ['0', !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Join [ '', [!Ref  ClientPrefix, 'ELB Subnet AZ1'] ]
+
+
+  AdminSubnetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        !Ref  XYZVPC
+      CidrBlock:
+        !Ref  AdminSubnetAZ2CIDR
+      AvailabilityZone:
+        !Select ['1', !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Join [ '', [!Ref  ClientPrefix, 'Admin Subnet AZ2' ]]
+  ELBSubnetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        !Ref  XYZVPC
+      CidrBlock:
+        !Ref  ELBSubnetAZ2CIDR
+      AvailabilityZone:
+        !Select ['1', !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Join [ '', [!Ref  ClientPrefix, 'ELB Subnet AZ2'] ]
+
+
+  AdminSubnetAZ1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        !Ref  XYZVPC
+      CidrBlock:
+        !Ref  AdminSubnetAZ1CIDR
+      AvailabilityZone:
+        !Select ['0', !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Join [ '', [!Ref  ClientPrefix, 'Admin Subnet AZ1' ]]
+  NATAZ1:
+    DependsOn: XYZGatewayAttatch
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        !GetAtt NATEIPAZ1.AllocationId
+      SubnetId:
+        !Ref  AdminSubnetAZ1
+
+  NATEIPAZ1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATAZ2:
+    DependsOn: XYZGatewayAttatch
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        !GetAtt NATEIPAZ2.AllocationId
+      SubnetId:
+        !Ref  AdminSubnetAZ2
+
+  NATEIPAZ2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  AdminRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: "CloudWatchPublish"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: "arn:aws:logs:*:*:*"
+
+  AdminRoleInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref  AdminRole
+
+
+
+  AdminInstaceAZ1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref  AdminInstanceType
+      IamInstanceProfile: !Ref  AdminRoleInstanceProfile
+      KeyName:  !Ref  KeyName
+      EbsOptimized: !Ref  EbsOpt
+      ImageId:  !FindInMap [ AWSRegionArch2AMI, !Ref 'AWS::Region', !FindInMap [ AWSInstanceType2Arch, !Ref  AdminInstanceType, Arch ] ]
+      DisableApiTermination: 'true'
+      BlockDeviceMappings:
+      - DeviceName: "/dev/sda1"
+        Ebs:
+          VolumeType: gp2
+          DeleteOnTermination: 'true'
+          VolumeSize: '75'
+      - DeviceName: "/dev/sdw"
+        Ebs:
+          VolumeType: sc1
+          DeleteOnTermination: 'true'
+          VolumeSize: '500'
+
+      NetworkInterfaces:
+      - DeleteOnTermination: true
+        Description: Main interface
+        DeviceIndex: '0'
+        GroupSet:
+        - !Ref  AdminSecurityGroup
+        SubnetId:  !Ref  AdminSubnetAZ1
+      Tags:
+      - Key: Name
+        Value:  !Join [ '', [!Ref  ClientPrefix, 'AWSADMIN01' ]]
+
+
+  AdminIPAZ1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref  AdminInstaceAZ1
+
+
+
+  AdminSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Admin Security Group
+      VpcId: !Ref  XYZVPC
+      SecurityGroupIngress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, 'Admin SG' ]]
+
+  rtMan:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref  XYZVPC
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ',[ !Ref  ClientPrefix, 'Admin Internet Route'] ]
+
+  rtManassocAZ1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref  rtMan
+      SubnetId: !Ref  AdminSubnetAZ1
+
+  rtManassocAZ2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref  rtMan
+      SubnetId: !Ref  AdminSubnetAZ2
+
+  rtManInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref  rtMan
+      GatewayId: !Ref  XYZGateway
+
+  rtELB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref  XYZVPC
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, 'ELB Internet Route' ]]
+
+
+  rtELBassocAZ1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref  rtELB
+      SubnetId: !Ref  ELBSubnetAZ1
+
+  rtELBassocAZ2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref  rtELB
+      SubnetId: !Ref  ELBSubnetAZ2
+
+  rtELBInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref  rtELB
+      GatewayId: !Ref  XYZGateway
+
+  AdminAcl:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref  XYZVPC
+      Tags:
+      - Key: Name
+        Value: !Join [ ' ', [!Ref  ClientPrefix, 'Admin ACL' ]]
+
+
+  AdminAclAssoc:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      NetworkAclId: !Ref  AdminAcl
+      SubnetId: !Ref  AdminSubnetAZ2
+
+  AdminAclAllowTCPEgress:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: true
+      Protocol: "-1"
+      RuleAction: allow
+      RuleNumber: '200'
+      NetworkAclId: !Ref  AdminAcl
+
+  AdminAllowAllIngress:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Protocol: "-1"
+      RuleAction: allow
+      RuleNumber: '200'
+      NetworkAclId: !Ref  AdminAcl
+
+  AdminDenySSHAll:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Protocol: '6'
+      PortRange:
+        From: 22
+        To: 22
+      RuleAction: deny
+      RuleNumber: '199'
+      NetworkAclId: !Ref  AdminAcl
+
+  AdminAllowSSHInternal:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: !Ref  XYZVPCCIDR
+      Protocol: '6'
+      PortRange:
+        From: 22
+        To: 22
+      RuleAction: allow
+      RuleNumber: '130'
+      NetworkAclId: !Ref  AdminAcl
+
+  AdminAllowSSHTG:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 12.216.152.160/27
+      Protocol: '6'
+      PortRange:
+        From: 22
+        To: 22
+      RuleAction: allow
+      RuleNumber: '120'
+      NetworkAclId: !Ref  AdminAcl
+
+  ELBAcl:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref  XYZVPC
+      Tags:
+      - Key: Name
+        Value: !Join [ '', [!Ref  ClientPrefix, 'ELB ACL'] ]
+
+  ELBAclAssoc:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      NetworkAclId: !Ref  ELBAcl
+      SubnetId: !Ref  ELBSubnetAZ1
+
+  ELBAclAllowTCPEgress:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: true
+      Protocol: "-1"
+      RuleAction: allow
+      RuleNumber: '200'
+      NetworkAclId: !Ref  ELBAcl
+  ELBAllowAllIngress:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Protocol: "-1"
+      RuleAction: allow
+      RuleNumber: '200'
+      NetworkAclId: !Ref  ELBAcl
+
+
+Outputs:
+  ClientPrefix:
+    Description: Client Prefix
+    Value: !Ref  ClientPrefix
+    Export:
+      Name: !Sub "${AWS::StackName}-ClientPrefix"
+
+  VpcId:
+    Description: VPC ID
+    Value: !Ref  XYZVPC
+    Export:
+      Name: !Sub "${AWS::StackName}-VPCID"
+
+  GatewayID:
+    Description: Internet Gateway ID
+    Value: !Ref  XYZGateway
+    Export:
+      Name: !Sub "${AWS::StackName}-InternetGateway"
+
+  VPNGatewayID:
+    Description: VPN Gateway ID
+    Value: !Ref  VPNGateway
+    Export:
+      Name: !Sub "${AWS::StackName}-VPNGateway"
+
+  S3EndpointID:
+    Description: S3 Endpoint ID
+    Value: !Ref  S3Endpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-S3-Endpoint"
+
+  VpcCIDR:
+    Description: VPC CIDR range
+    Value: !Ref  XYZVPCCIDR
+    Export:
+      Name: !Sub "${AWS::StackName}-VPC-CIDR"
+
+
+  ELBSubnetAZ1:
+    Description: ELB Prod SubnetAZ1
+    Value: !Ref  ELBSubnetAZ1
+    Export:
+      Name: !Sub "${AWS::StackName}-ELB-Subnet-AZ1"
+  ELBSubnetAZ2:
+    Description: ELB Prod SubnetAZ2
+    Value: !Ref  ELBSubnetAZ2
+    Export:
+      Name: !Sub "${AWS::StackName}-ELB-Subnet-AZ2"
+  AdminSubnetAZ1:
+    Description: AdminSubnetAZ1
+    Value: !Ref  AdminSubnetAZ1
+    Export:
+      Name: !Sub "${AWS::StackName}-AdminSubnetAZ1"
+  AdminSubnetAZ2:
+    Description: AdminSubnetAZ2
+    Value: !Ref  AdminSubnetAZ2
+    Export:
+      Name: !Sub "${AWS::StackName}-AdminSubnetAZ2"
+
+  AdminSubnetAZ1CIDR:
+    Description: AdminSubnetAZ1CIDR
+    Value: !Ref  AdminSubnetAZ1CIDR
+    Export:
+      Name: !Sub "${AWS::StackName}-Admin-AZ1-CIDR"
+
+  AdminSubnetAZ2CIDR:
+    Description: AdminSubnetAZ2CIDR
+    Value: !Ref  AdminSubnetAZ2CIDR
+    Export:
+      Name: !Sub "${AWS::StackName}-Admin-AZ2-CIDR"
+
+  NATAZ1:
+    Description: NATAZ1
+    Value: !Ref  NATAZ1
+    Export:
+      Name: !Sub "${AWS::StackName}-NAT-AZ1"
+
+  NATAZ2:
+    Description: NATAZ2
+    Value: !Ref  NATAZ2
+    Export:
+      Name: !Sub "${AWS::StackName}-NAT-AZ2"
+
+  ELBSubnetAZ1CIDR:
+    Description: ELBSubnetAZ1CIDR
+    Value: !Ref  ELBSubnetAZ1CIDR
+    Export:
+      Name: !Sub "${AWS::StackName}-ELB-AZ1-CIDR"
+  ELBSubnetAZ2CIDR:
+    Description: ELBSubnetAZ2CIDR
+    Value: !Ref  ELBSubnetAZ2CIDR
+    Export:
+      Name: !Sub "${AWS::StackName}-ELB-AZ2-CIDR"
