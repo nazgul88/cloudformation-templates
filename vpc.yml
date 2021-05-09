@@ -6,7 +6,7 @@ Parameters:
   KeyName:
     Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
     Type: AWS::EC2::KeyPair::KeyName
-    Default: cloudgate
+    Default: keypair
     ConstraintDescription: must be the name of an existing EC2 KeyPair.
 
   ClientPrefix:
@@ -252,7 +252,7 @@ Resources:
       KeyName:  !Ref  KeyName
       EbsOptimized: !Ref  EbsOpt
       ImageId:  !FindInMap [ AWSRegionArch2AMI, !Ref 'AWS::Region', !FindInMap [ AWSInstanceType2Arch, !Ref  AdminInstanceType, Arch ] ]
-      DisableApiTermination: 'true'
+      DisableApiTermination: 'true' #Termination protection is enabled/on after the final version is ready enable it
       BlockDeviceMappings:
       - DeviceName: "/dev/sda1"
         Ebs:
